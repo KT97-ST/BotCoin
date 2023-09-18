@@ -171,4 +171,4 @@ if __name__ == '__main__':
         startTrade()
         sl_run = sl_run + 1
         print("Số lần chạy: ", sl_run)
-        sleep(120)
+        sleep(30)

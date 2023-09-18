@@ -146,7 +146,7 @@ def place_order_for_coin(coin_pair):
                 sleep(1)
                 set_take_profit = client.futures_create_order(symbol=coin_pair, side='BUY', type='TAKE_PROFIT_MARKET', quantity=quantity, stopPrice=take_profit_price)
                 print("Đã đặt take_profit: {}".format(stop_loss_price))
-                print("=======================Break=============")s
+                print("=======================Break=============")
                 # break
             # else: 
                 # print("Không có lệnh !")

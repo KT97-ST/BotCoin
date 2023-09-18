@@ -116,7 +116,7 @@ def place_order_for_coin(coin_pair):
                 print("Đã đặt stop_loss: {}".format(stop_loss_price))
                 sleep(1)
                 set_take_profit = client.futures_create_order(symbol=coin_pair, side='SELL', type='TAKE_PROFIT_MARKET', quantity=quantity, stopPrice=take_profit_price)
-                print("Đã đặt stop_loss: {}".format(take_profit_price))
+                print("Đã đặt take_profit: {}".format(take_profit_price))
                 print("==========================Break===========")
                 break
             elif df['position'].iloc[i] == -1:  # Tín hiệu bán
@@ -166,4 +166,4 @@ if __name__ == '__main__':
         startTrade()
         sl_run = sl_run + 1
         print("Số lần chạy: ", sl_run)
-        sleep(120)
+        sleep(10)
