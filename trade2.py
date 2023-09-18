@@ -1,16 +1,13 @@
-import requests
 import numpy as np
 import pandas as pd
 import talib
 from binance.client import Client
-import config, func
+import config
 import schedule
 from time import sleep
 
 # Đường dẫn tới file .txt chứa danh sách các cặp coin
 file_path = 'coin_list_fu.txt'
-
-# client = Client(config.API_KEY, config.API_SECRET, testnet=True)
 
 # Đọc danh sách các cặp coin từ file .txt
 def read_coin_pairs(file_path):
@@ -20,28 +17,36 @@ def read_coin_pairs(file_path):
             coin_pairs.append(line.strip())
     return coin_pairs
 
-# hàm tính khối lượng
+# Hàm tính khối lượng
 def calculate_quantity(coin_pair, usd_value, client):
     ticker = client.get_ticker(symbol=coin_pair)
     current_price = float(ticker['lastPrice'])
     quantity = usd_value / current_price
     return quantity
 
-# Hàm tính stop loss
-def cal_stoploss(price, percent):
-    stop_loss_price = price * (1 - percent / 100)
-    stop_loss_price = round(stop_loss_price,2)
-    return stop_loss_price
+# Hàm xác định tín hiệu mua bán dựa trên RSI
+def calculate_rsi_signal(df):
+    rsi = talib.RSI(df['close'], timeperiod=14)
+    df['rsi'] = rsi
+    df['rsi_signal'] = np.where(df['rsi'] > 70, -1, np.where(df['rsi'] < 30, 1, 0))
 
-# Hàm tính cal_takeprofit
-def cal_takeprofit(price, percent):
-    take_profit_price = price * (1 + percent / 100)
-    take_profit_price = round(take_profit_price,2)
-    return take_profit_price
+# Hàm tính chỉ số Stochastic Oscillator
+def calculate_stochastic_oscillator(df):
+    k, d = talib.STOCH(df['high'], df['low'], df['close'])
+    df['stochastic_k'] = k
+    df['stochastic_d'] = d
+
+# Hàm tính Bollinger Bands
+def calculate_bollinger_bands(df):
+    upper, middle, lower = talib.BBANDS(df['close'], timeperiod=20)
+    df['bb_upper'] = upper
+    df['bb_middle'] = middle
+    df['bb_lower'] = lower
 
 # Kiểm tra điều kiện và đặt lệnh cho cặp coin
 def place_order_for_coin(coin_pair):
     client = Client(config.API_KEY, config.API_SECRET, testnet=True)
+
     # Lấy dữ liệu lịch sử từ Binance
     interval = Client.KLINE_INTERVAL_1HOUR
     limit = 100
@@ -56,101 +61,44 @@ def place_order_for_coin(coin_pair):
     df = df.astype(float)
 
     # Tính toán các chỉ báo kỹ thuật
-    rsi = talib.RSI(df['close'], timeperiod=14)
-    stoch_k, stoch_d = talib.STOCH(df['high'], df['low'], df['close'], fastk_period=1, slowk_period=1, slowd_period=1)
-    ema_50 = talib.EMA(df['close'], timeperiod=50)
-    ema_200 = talib.EMA(df['close'], timeperiod=200)
-
-    # Xác định tín hiệu giao dịch dựa trên các chỉ báo kỹ thuật
-    df['signal'] = np.where((rsi < 30) & (stoch_k < 20) & (stoch_d < 20) & (df['close'] > ema_50) & (ema_50 > ema_200), 1,
-                            np.where((rsi > 70) & (stoch_k > 80) & (stoch_d > 80) & (df['close'] < ema_50) & (ema_50 < ema_200), -1, 0))
-
-    # Tạo cột tín hiệu dịch chuyển
-    df['position'] = df['signal'].diff()
+    calculate_rsi_signal(df)
+    calculate_stochastic_oscillator(df)
+    calculate_bollinger_bands(df)
 
     # Thiết lập thông số đặt lệnh
     usd_value = 10  # Giá trị USD muốn đặt cho mỗi đồng coin
-    # tinh toan ra so luong can dat theo so tien
     quantity = calculate_quantity(coin_pair, usd_value, client)
-
-    # giành cho BTC vì khối lượng của BTC rất nhỏ nên sẽ lấy số thập phân 4 số VD: 0.004 tương đương với 10
-    if coin_pair.strip() == "BTCUSDT":
-        if quantity > 0.0003:
-            quantity = round(quantity, 4)
-    else:
-        if isinstance(quantity, float):
-            quantity = round(quantity, 3)
-        else:
-            quantity = quantity
-
     leverage = 10  # Đòn bẩy
-    quantity = quantity * leverage
-    stop_loss = 0.05  # Mức stop loss (95% giá mua/short)
-    take_profit = 1.05  # Mức take profit (105% giá mua/short)
-    # kiem tra da dat lenh hay chua
+
+    # kiểm tra đã đặt lệnh hay chưa
     order_status = client.futures_get_open_orders(symbol=coin_pair)
     if len(order_status) > 0:
         print("Lệnh futures đã được đặt: ", coin_pair)
     else:
         # Đặt lệnh futures dựa trên tín hiệu giao dịch
         for i in range(1, len(df)):
-            if df['position'].iloc[i] == 1:  # Tín hiệu mua
+            if df['rsi_signal'].iloc[i] == 1 and df['stochastic_k'].iloc[i] > df['stochastic_d'].iloc[i] and df['close'].iloc[i] > df['bb_middle'].iloc[i]:
+                # Tín hiệu mua
                 price = df['close'].iloc[i]
-                #quantity = func.calculate_quantity(price, 10, leverage)
-                stop_loss_price =  func.cal_stoploss(price, 1)
-                take_profit_price = func.cal_takeprofit(price, 3)
-                if stop_loss_price > price:
-                    tmp = stop_loss_price
-                    stop_loss_price = take_profit_price
-                    take_profit_price = tmp
-                print("========================================")
-                print("Lệnh BUY: {}".format(coin_pair))
-                print("price: {}".format(price))
-                print("stop loss price: {}".format(stop_loss_price))
-                print("take profit price: {}".format(take_profit_price))
-                print("quantity: {}".format(quantity))
-                print("leverage: {}".format(leverage))
-                print("========================================")
-                # Lấy thông tin vị thế hiện tại
-                order = client.futures_create_order(symbol=coin_pair,side=Client.SIDE_BUY,type=Client.ORDER_TYPE_MARKET,quantity=quantity,leverage=leverage)
+                stop_loss_price = price * 0.95
+                take_profit_price = price * 1.05
+                order = client.futures_create_order(symbol=coin_pair, side=Client.SIDE_BUY, type=Client.ORDER_TYPE_MARKET, quantity=quantity, leverage=leverage)
                 sleep(1)
-                set_stop_loss = client.futures_create_order(symbol=coin_pair, side='SELL', type='STOP_MARKET', quantity=quantity, stopPrice=stop_loss_price)
-                print("Đã đặt stop_loss: {}".format(stop_loss_price))
+                set_stop_loss = client.futures_create_order(symbol=coin_pair, side=Client.SIDE_SELL, type=Client.ORDER_TYPE_STOP_MARKET, quantity=quantity, stopPrice=stop_loss_price)
                 sleep(1)
-                set_take_profit = client.futures_create_order(symbol=coin_pair, side='SELL', type='TAKE_PROFIT_MARKET', quantity=quantity, stopPrice=take_profit_price)
-                print("Đã đặt stop_loss: {}".format(take_profit_price))
-                print("==========================Break===========")
-                # break
-            elif df['position'].iloc[i] == -1:  # Tín hiệu bán
+                set_take_profit = client.futures_create_order(symbol=coin_pair, side=Client.SIDE_SELL, type=Client.ORDER_TYPE_TAKE_PROFIT_MARKET, quantity=quantity, stopPrice=take_profit_price)
+                break
+            elif df['rsi_signal'].iloc[i] == -1 and df['stochastic_k'].iloc[i] < df['stochastic_d'].iloc[i] and df['close'].iloc[i] < df['bb_middle'].iloc[i]:
+                # Tín hiệu bán
                 price = df['close'].iloc[i]
-                #quantity = func.calculate_quantity(price, 10, leverage)
-                stop_loss_price =  func.cal_stoploss(price, 1)
-                take_profit_price = func.cal_takeprofit(price, 3)
-
-                if stop_loss_price < price:
-                    tmp = stop_loss_price
-                    stop_loss_price = take_profit_price
-                    take_profit_price = tmp
-                print("========================================")
-                print("Lệnh SELL: {}".format(coin_pair))
-                print("price: {}".format(price))
-                print("stop loss price: {}".format(stop_loss_price))
-                print("take profit price: {}".format(take_profit_price))
-                print("quantity: {}".format(quantity))
-                print("leverage: {}".format(leverage))
-                print("========================================")
-                order = client.futures_create_order(symbol=coin_pair,side=Client.SIDE_SELL,type=Client.ORDER_TYPE_MARKET,quantity=quantity,leverage=leverage)
-                sleep(1)           
-                set_stop_loss = client.futures_create_order(symbol=coin_pair, side='BUY', type='STOP_MARKET', quantity=quantity, stopPrice=stop_loss_price)
-                print("Đã đặt stop_loss: {}".format(take_profit_price))
+                stop_loss_price = price * 1.05
+                take_profit_price = price * 0.95
+                order = client.futures_create_order(symbol=coin_pair, side=Client.SIDE_SELL, type=Client.ORDER_TYPE_MARKET, quantity=quantity, leverage=leverage)
                 sleep(1)
-                set_take_profit = client.futures_create_order(symbol=coin_pair, side='BUY', type='TAKE_PROFIT_MARKET', quantity=quantity, stopPrice=take_profit_price)
-                print("Đã đặt take_profit: {}".format(stop_loss_price))
-                print("=======================Break=============")
-                # break
-            # else: 
-                # print("Không có lệnh !")
-
+                set_stop_loss = client.futures_create_order(symbol=coin_pair, side=Client.SIDE_BUY, type=Client.ORDER_TYPE_STOP_MARKET, quantity=quantity, stopPrice=stop_loss_price)
+                sleep(1)
+                set_take_profit = client.futures_create_order(symbol=coin_pair, side=Client.SIDE_BUY, type=Client.ORDER_TYPE_TAKE_PROFIT_MARKET, quantity=quantity, stopPrice=take_profit_price)
+                break
 
 def startTrade():
     # Đọc danh sách các cặp coin
@@ -158,11 +106,10 @@ def startTrade():
 
     # Duyệt qua danh sách các cặp coin và đặt lệnh
     for coin_pair in coin_pairs:
-        try:    
+        try:
             place_order_for_coin(coin_pair)
         except Exception as e:
-            print("khong the dat lenh {}".format(e))
-   
+            print("Không thể đặt lệnh cho {}: {}".format(coin_pair, e))
 
 if __name__ == '__main__':
     sl_run = 0
@@ -170,4 +117,4 @@ if __name__ == '__main__':
         startTrade()
         sl_run = sl_run + 1
         print("Số lần chạy: ", sl_run)
-        sleep(120)
+        sleep(10)

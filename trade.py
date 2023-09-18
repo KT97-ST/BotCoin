@@ -6,6 +6,7 @@ from binance.client import Client
 import config, func
 import schedule
 from time import sleep
+import matplotlib.pyplot as plt
 
 # Đường dẫn tới file .txt chứa danh sách các cặp coin
 file_path = 'coin_list_fu.txt'
@@ -118,6 +119,10 @@ def place_order_for_coin(coin_pair):
                 set_take_profit = client.futures_create_order(symbol=coin_pair, side='SELL', type='TAKE_PROFIT_MARKET', quantity=quantity, stopPrice=take_profit_price)
                 print("Đã đặt take_profit: {}".format(take_profit_price))
                 print("==========================Break===========")
+                # Vẽ biểu đồ
+                plt.plot(df.index[i], price, 'go')  # Điểm mua - màu xanh
+                plt.plot(df.index[i], stop_loss_price, 'ro')  # Điểm chốt lỗ - màu đỏ
+                plt.plot(df.index[i], take_profit_price, 'bo')  # Điểm chốt lời - màu xanh dương
                 break
             elif df['position'].iloc[i] == -1:  # Tín hiệu bán
                 price = df['close'].iloc[i]
@@ -145,8 +150,17 @@ def place_order_for_coin(coin_pair):
                 set_take_profit = client.futures_create_order(symbol=coin_pair, side='BUY', type='TAKE_PROFIT_MARKET', quantity=quantity, stopPrice=take_profit_price)
                 print("Đã đặt take_profit: {}".format(stop_loss_price))
                 print("=======================Break=============")
+                # Vẽ biểu đồ
+                plt.plot(df.index[i], price, 'ro')  # Điểm bán   - màu đỏ
+                plt.plot(df.index[i], stop_loss_price, 'go')  # Điểm chốt lỗ - màu xanh
+                plt.plot(df.index[i], take_profit_price, 'bo')  # Điểm chốt lời - màu xanh dương
                 break
-
+        # Hiển thị biểu đồ
+        plt.xlabel('Thời gian')
+        plt.ylabel('Giá')
+        plt.title('Biểu đồ giao dịch')
+        plt.grid(True)
+        plt.show()        
 
 def startTrade():
     # Đọc danh sách các cặp coin

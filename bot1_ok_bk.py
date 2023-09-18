@@ -10,7 +10,7 @@ from time import sleep
 # Đường dẫn tới file .txt chứa danh sách các cặp coin
 file_path = 'coin_list_fu.txt'
 
-client = Client(config.API_KEY, config.API_SECRET, testnet=True)
+# client = Client(config.API_KEY, config.API_SECRET, testnet=True)
 
 # Đọc danh sách các cặp coin từ file .txt
 def read_coin_pairs(file_path):
@@ -21,26 +21,28 @@ def read_coin_pairs(file_path):
     return coin_pairs
 
 # hàm tính khối lượng
-def calculate_quantity(coin_pair, usd_value):
+def calculate_quantity(coin_pair, usd_value, client):
     ticker = client.get_ticker(symbol=coin_pair)
     current_price = float(ticker['lastPrice'])
     quantity = usd_value / current_price
     return quantity
 
-# Hàm tính stop loss
-def cal_stoploss(price, percent):
-    stop_loss_price = price * (1 - percent / 100)
-    stop_loss_price = round(stop_loss_price,2)
-    return stop_loss_price
+# # Hàm tính stop loss
+# def cal_stoploss(price, percent):
+#     stop_loss_price = price * (1 - percent / 100)
+#     stop_loss_price = round(stop_loss_price,2)
+#     return stop_loss_price
 
-# Hàm tính cal_takeprofit
-def cal_takeprofit(price, percent):
-    take_profit_price = price * (1 + percent / 100)
-    take_profit_price = round(take_profit_price,2)
-    return take_profit_price
+# # Hàm tính cal_takeprofit
+# def cal_takeprofit(price, percent):
+#     take_profit_price = price * (1 + percent / 100)
+#     take_profit_price = round(take_profit_price,2)
+#     return take_profit_price
 
 # Kiểm tra điều kiện và đặt lệnh cho cặp coin
 def place_order_for_coin(coin_pair):
+
+    client = Client(config.API_KEY, config.API_SECRET, testnet=True)
     # Lấy dữ liệu lịch sử từ Binance
     interval = Client.KLINE_INTERVAL_1HOUR
     limit = 100
@@ -67,7 +69,7 @@ def place_order_for_coin(coin_pair):
     # Thiết lập thông số đặt lệnh
     usd_value = 10  # Giá trị USD muốn đặt cho mỗi đồng coin
     # tinh toan ra so luong can dat theo so tien
-    quantity = calculate_quantity(coin_pair, usd_value)
+    quantity = calculate_quantity(coin_pair, usd_value, client)
 
     # giành cho BTC vì khối lượng của BTC rất nhỏ nên sẽ lấy số thập phân 4 số VD: 0.004 tương đương với 10
     if coin_pair.strip() == "BTCUSDT":
@@ -92,13 +94,9 @@ def place_order_for_coin(coin_pair):
         for i in range(1, len(df)):
             if df['position'].iloc[i] == 1:  # Tín hiệu mua
                 price = df['close'].iloc[i]
-
-                stop_loss_price =  price * (1 - stop_loss) * 0.95
-                if stop_loss_price > 1:
-                    stop_loss_price = round(stop_loss_price, 2)
-                take_profit_price = price * take_profit
-                if take_profit_price > 1:
-                    take_profit_price = round(take_profit_price,2)
+                #quantity = func.calculate_quantity(price, 10, leverage)
+                stop_loss_price =  func.cal_stoploss(price, 1)
+                take_profit_price = func.cal_takeprofit(price, 3)
                 if stop_loss_price > price:
                     tmp = stop_loss_price
                     stop_loss_price = take_profit_price
@@ -118,18 +116,15 @@ def place_order_for_coin(coin_pair):
                 print("Đã đặt stop_loss: {}".format(stop_loss_price))
                 sleep(1)
                 set_take_profit = client.futures_create_order(symbol=coin_pair, side='SELL', type='TAKE_PROFIT_MARKET', quantity=quantity, stopPrice=take_profit_price)
-                print("Đã đặt stop_loss: {}".format(take_profit_price))
+                print("Đã đặt take_profit: {}".format(take_profit_price))
                 print("==========================Break===========")
                 break
             elif df['position'].iloc[i] == -1:  # Tín hiệu bán
                 price = df['close'].iloc[i]
-                stop_loss_price = price * (1 - stop_loss) * 0.95
+                #quantity = func.calculate_quantity(price, 10, leverage)
+                stop_loss_price =  func.cal_stoploss(price, 1)
+                take_profit_price = func.cal_takeprofit(price, 3)
 
-                if stop_loss_price > 1:
-                    stop_loss_price = round(stop_loss_price, 2)
-                take_profit_price = price * take_profit
-                if take_profit_price > 1:
-                    take_profit_price = round(take_profit_price,2)
                 if stop_loss_price < price:
                     tmp = stop_loss_price
                     stop_loss_price = take_profit_price
@@ -161,8 +156,8 @@ def startTrade():
     for coin_pair in coin_pairs:
         try:    
             place_order_for_coin(coin_pair)
-        except:
-            print("khong the dat lenh {}".format(coin_pair))
+        except Exception as e:
+            print("khong the dat lenh {}".format(e))
    
 
 if __name__ == '__main__':
@@ -171,4 +166,4 @@ if __name__ == '__main__':
         startTrade()
         sl_run = sl_run + 1
         print("Số lần chạy: ", sl_run)
-        sleep(30)
+        sleep(10)
